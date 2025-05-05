@@ -2,14 +2,14 @@
 pragma solidity ^0.8.0;
 
 contract OrganicCertification {
+    enum Status { Pending, InProgress, Approved, Rejected, Certified }
+
     struct CertificationRequest {
         address farmer;
         string productName;
         string description;
         string[] mediaHashes;
-        bool isInspected;
-        bool isApproved;
-        bool isCertified;
+        Status status;
         address inspector;
         address certifier;
         uint256 timestamp;
@@ -17,51 +17,64 @@ contract OrganicCertification {
 
     mapping(uint256 => CertificationRequest) public certificationRequests;
     uint256 public requestCount;
-    
-    event RequestCreated(uint256 indexed  address indexed farmer, string productName);
-    event RequestInspected(uint256 indexed  address indexed inspector, bool approved);
-    event CertificateIssued(uint256 indexed  address indexed certifier);
-    event RequestReverted(uint256 indexed  address indexed farmer);
+
+    event RequestCreated(uint256 indexed requestId, address indexed farmer, string productName);
+    event RequestInProgress(uint256 indexed requestId, address indexed inspector);
+    event RequestApproved(uint256 indexed requestId, address indexed inspector);
+    event RequestRejected(uint256 indexed requestId, address indexed inspector);
+    event CertificateIssued(uint256 indexed requestId, address indexed certifier);
+    event RequestReverted(uint256 indexed requestId, address indexed farmer);
 
     function createRequest(
+        uint256 requestId,
         string memory _productName,
         string memory _description,
         string[] memory _mediaHashes
     ) public {
-        uint256 requestId = requestCount++;
         certificationRequests[requestId] = CertificationRequest({
             farmer: msg.sender,
             productName: _productName,
             description: _description,
             mediaHashes: _mediaHashes,
-            isInspected: false,
-            isApproved: false,
-            isCertified: false,
+            status: Status.Pending,
             inspector: address(0),
             certifier: address(0),
             timestamp: block.timestamp
         });
-        
-        emit RequestCreated( msg.sender, _productName);
+
+        emit RequestCreated(requestId, msg.sender, _productName);
     }
 
-    function inspectRequest(uint256 _requestId, bool _approved) public {
-        require(!certificationRequests[_requestId].isInspected, "Request already inspected");
-        certificationRequests[_requestId].isInspected = true;
-        certificationRequests[_requestId].isApproved = _approved;
-        certificationRequests[_requestId].inspector = msg.sender;
-        
-        emit RequestInspected(_requestId, msg.sender, _approved);
+    function markInProgress(uint256 _requestId) public {
+        CertificationRequest storage request = certificationRequests[_requestId];
+        require(request.status == Status.Pending, "Request must be pending");
+        request.status = Status.InProgress;
+        request.inspector = msg.sender;
+        emit RequestInProgress(_requestId, msg.sender);
+    }
+
+    function approveRequest(uint256 _requestId) public {
+        CertificationRequest storage request = certificationRequests[_requestId];
+        require(request.status == Status.InProgress, "Request must be in progress");
+        request.status = Status.Approved;
+        request.inspector = msg.sender;
+        emit RequestApproved(_requestId, msg.sender);
+    }
+
+    function rejectRequest(uint256 _requestId) public {
+        CertificationRequest storage request = certificationRequests[_requestId];
+        require(request.status == Status.InProgress, "Request must be in progress");
+        request.status = Status.Rejected;
+        request.inspector = msg.sender;
+        emit RequestRejected(_requestId, msg.sender);
     }
 
     function issueCertificate(uint256 _requestId) public {
-        require(certificationRequests[_requestId].isInspected, "Request not inspected");
-        require(certificationRequests[_requestId].isApproved, "Request not approved");
-        require(!certificationRequests[_requestId].isCertified, "Already certified");
-        
-        certificationRequests[_requestId].isCertified = true;
-        certificationRequests[_requestId].certifier = msg.sender;
-        
+        CertificationRequest storage request = certificationRequests[_requestId];
+        require(request.status == Status.Approved, "Request must be approved");
+        require(request.certifier == address(0), "Already certified");
+        request.status = Status.Certified;
+        request.certifier = msg.sender;
         emit CertificateIssued(_requestId, msg.sender);
     }
 
@@ -70,9 +83,7 @@ contract OrganicCertification {
         string memory productName,
         string memory description,
         string[] memory mediaHashes,
-        bool isInspected,
-        bool isApproved,
-        bool isCertified,
+        Status status,
         address inspector,
         address certifier,
         uint256 timestamp
@@ -83,9 +94,7 @@ contract OrganicCertification {
             request.productName,
             request.description,
             request.mediaHashes,
-            request.isInspected,
-            request.isApproved,
-            request.isCertified,
+            request.status,
             request.inspector,
             request.certifier,
             request.timestamp
@@ -93,9 +102,10 @@ contract OrganicCertification {
     }
 
     function revertRequest(uint256 _requestId) public {
-        require(certificationRequests[_requestId].farmer == msg.sender, "Only the farmer can revert");
-        require(!certificationRequests[_requestId].isCertified, "Cannot revert a certified request");
+        CertificationRequest storage request = certificationRequests[_requestId];
+        require(request.farmer == msg.sender, "Only the farmer can revert");
+        require(request.status != Status.Certified, "Cannot revert a certified request");
         delete certificationRequests[_requestId];
         emit RequestReverted(_requestId, msg.sender);
     }
-} 
+}

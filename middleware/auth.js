@@ -17,7 +17,6 @@ const auth = (allowedRoles = []) => {
             
             // Get user from database
             const user = await User.findByPk(decoded.id);
-            
             if (!user || !user.isActive) {
                 return res.status(401).json({ message: 'User not found or inactive' });
             }
@@ -29,7 +28,6 @@ const auth = (allowedRoles = []) => {
 
             // Add user to request object
             req.user = user;
-            console.log("user : ", user)
             next();
         } catch (error) {
             console.error('Auth middleware error:', error);

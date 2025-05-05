@@ -18,7 +18,7 @@ class CertificationService {
         let mediaFile = mediaFiles.find(f => f.fieldname === `checkpointMedia_${cp.id}`);
         let mediaUrl = mediaFile ? `/uploads/${mediaFile.filename}` : null;
         await Checkpoint.create({
-          requestId: request.id,
+          requestId: request.requestId,
           checkpointId: cp.id,
           answer: cp.answer,
           mediaUrl
@@ -32,13 +32,14 @@ class CertificationService {
           type: file.mimetype.startsWith('image/') ? 'image' : 'video',
           url: `/uploads/${file.filename}`,
           hash: file.filename, // In production, use IPFS hash
-          requestId: request.id
+          requestId: request.requestId
         });
         mediaHashes.push(media.hash);
       }
 
       // Create request on blockchain
       const blockchainResult = await blockchainService.createCertificationRequest(
+        data.requestId,
         data.productName,
         data.description,
         mediaHashes
@@ -131,11 +132,11 @@ class CertificationService {
     }
   }
 
-  async revertRequest( farmerId) {
+  async revertRequest(requestId) {
     try {
       const request = await CertificationRequest.findByPk(requestId);
       if (!request) throw new Error('Request not found');
-      if (request.farmerId !== farmerId) throw new Error('Not authorized');
+      if (request.id !== requestId) throw new Error('Not authorized');
       if (request.status === 'certified') throw new Error('Cannot revert a certified request');
 
       // Update blockchain
@@ -168,7 +169,7 @@ class CertificationService {
 
       // Format the response
       const formattedRequest = {
-        id: request.id,
+        id: request.requestId,
         productName: request.productName,
         description: request.description,
         status: request.status,

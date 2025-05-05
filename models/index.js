@@ -53,9 +53,8 @@ const User = sequelize.define('User', {
 });
 
 const CertificationRequest = sequelize.define('CertificationRequest', {
-  id: {
-    type: Sequelize.UUID,
-    defaultValue: Sequelize.UUIDV4,
+  requestId: {
+    type: Sequelize.STRING,
     primaryKey: true
   },
   productName: {
@@ -114,16 +113,38 @@ const Media = sequelize.define('Media', {
 });
 
 const Checkpoint = sequelize.define('Checkpoint', {
-    id: { type: Sequelize.INTEGER, autoIncrement: true, primaryKey: true },
-    requestid: { type: Sequelize.UUID, allowNull: false },
-    checkpointid: { type: Sequelize.INTEGER, allowNull: false },
-    answer: { type: Sequelize.STRING, allowNull: false },
-    mediaurl: { type: Sequelize.STRING }
-  }, {
-    tableName: 'Checkpoints',
-    underscored: false,
-    timestamps: false
-  });
+  id: { type: Sequelize.INTEGER, autoIncrement: true, primaryKey: true },
+  requestId: { type: Sequelize.UUID, allowNull: false },
+  checkpointId: { type: Sequelize.INTEGER, allowNull: false },
+  answer: { type: Sequelize.STRING, allowNull: false },
+  mediaUrl: { type: Sequelize.STRING }
+}, {
+  tableName: 'Checkpoints',
+  underscored: false,
+  timestamps: false
+});
+
+const DhiwayCertificate = sequelize.define('DhiwayCertificate', {
+  "requestId": {
+    type: Sequelize.INTEGER,
+    primaryKey: true,
+    allowNull: false,
+    references: {
+      model: 'CertificationRequests',
+      key: 'requestId'
+    },
+    field: 'requestId'
+  },
+  "dhiwayResponse": {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    field: 'dhiwayResponse'
+  }
+}, {
+  tableName: 'DhiwayCertificates',
+  timestamps: false // <--- disables createdAt/updatedAt
+});
+
 
 // Define relationships
 User.hasMany(CertificationRequest, { foreignKey: 'farmerId' });
@@ -132,13 +153,17 @@ CertificationRequest.belongsTo(User, { as: 'inspector', foreignKey: 'inspectorId
 CertificationRequest.belongsTo(User, { as: 'certifier', foreignKey: 'certifierId' });
 CertificationRequest.hasMany(Media, { foreignKey: 'requestId' });
 Media.belongsTo(CertificationRequest, { foreignKey: 'requestId' });
-CertificationRequest.hasMany(Checkpoint, { foreignKey: 'requestid' });
-Checkpoint.belongsTo(CertificationRequest, { foreignKey: 'requestid' });
+CertificationRequest.hasMany(Checkpoint, { foreignKey: 'requestId' });
+Checkpoint.belongsTo(CertificationRequest, { foreignKey: 'requestId' });
+DhiwayCertificate.belongsTo(CertificationRequest, { foreignKey: 'requestId', targetKey: 'requestId' });
+CertificationRequest.hasOne(DhiwayCertificate, { foreignKey: 'requestId', sourceKey: 'requestId' });
+
 
 module.exports = {
   sequelize,
   User,
   CertificationRequest,
   Media,
-  Checkpoint
+  Checkpoint,
+  DhiwayCertificate
 }; 

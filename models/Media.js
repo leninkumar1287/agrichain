@@ -22,7 +22,7 @@ Media.init({
     allowNull: false
   },
   requestId: {
-    type: DataTypes.UUID,
+    type: DataTypes.STRING,
     allowNull: false,
     references: {
       model: 'CertificationRequests',

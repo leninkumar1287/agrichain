@@ -1,5 +1,5 @@
 {
-  "address": "0x10E460c4AEE93166084d91cdB0688C2a7C3c1143",
+  "address": "0x391c43b59aE2f4357d9D56D4d236C68714302085",
   "abi": [
     {
       "anonymous": false,
@@ -18,6 +18,25 @@
         }
       ],
       "name": "CertificateIssued",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "requestId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "inspector",
+          "type": "address"
+        }
+      ],
+      "name": "RequestApproved",
       "type": "event"
     },
     {
@@ -59,15 +78,28 @@
           "internalType": "address",
           "name": "inspector",
           "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "bool",
-          "name": "approved",
-          "type": "bool"
         }
       ],
-      "name": "RequestInspected",
+      "name": "RequestInProgress",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "requestId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "inspector",
+          "type": "address"
+        }
+      ],
+      "name": "RequestRejected",
       "type": "event"
     },
     {
@@ -88,6 +120,19 @@
       ],
       "name": "RequestReverted",
       "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_requestId",
+          "type": "uint256"
+        }
+      ],
+      "name": "approveRequest",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
     },
     {
       "inputs": [
@@ -115,19 +160,9 @@
           "type": "string"
         },
         {
-          "internalType": "bool",
-          "name": "isInspected",
-          "type": "bool"
-        },
-        {
-          "internalType": "bool",
-          "name": "isApproved",
-          "type": "bool"
-        },
-        {
-          "internalType": "bool",
-          "name": "isCertified",
-          "type": "bool"
+          "internalType": "enum OrganicCertification.Status",
+          "name": "status",
+          "type": "uint8"
         },
         {
           "internalType": "address",
@@ -150,6 +185,11 @@
     },
     {
       "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "requestId",
+          "type": "uint256"
+        },
         {
           "internalType": "string",
           "name": "_productName",
@@ -202,19 +242,9 @@
           "type": "string[]"
         },
         {
-          "internalType": "bool",
-          "name": "isInspected",
-          "type": "bool"
-        },
-        {
-          "internalType": "bool",
-          "name": "isApproved",
-          "type": "bool"
-        },
-        {
-          "internalType": "bool",
-          "name": "isCertified",
-          "type": "bool"
+          "internalType": "enum OrganicCertification.Status",
+          "name": "status",
+          "type": "uint8"
         },
         {
           "internalType": "address",
@@ -241,14 +271,9 @@
           "internalType": "uint256",
           "name": "_requestId",
           "type": "uint256"
-        },
-        {
-          "internalType": "bool",
-          "name": "_approved",
-          "type": "bool"
         }
       ],
-      "name": "inspectRequest",
+      "name": "issueCertificate",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -261,7 +286,20 @@
           "type": "uint256"
         }
       ],
-      "name": "issueCertificate",
+      "name": "markInProgress",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_requestId",
+          "type": "uint256"
+        }
+      ],
+      "name": "rejectRequest",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

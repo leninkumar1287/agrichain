@@ -13,16 +13,20 @@ class BlockchainService {
         );
     }
 
-    async createCertificationRequest(productName, description, mediaHashes, requestId) {
+    async createCertificationRequest(requestId, productName, description, mediaHashes) {
         try {
+            console.log(requestId,
+                productName,
+                description,
+                mediaHashes)
             const tx = await this.contract.createRequest(
-                
+                requestId,
                 productName,
                 description,
                 mediaHashes
             );
             const receipt = await tx.wait();
-            
+
             // Get the RequestCreated event from the logs
             const event = receipt.logs
                 .map(log => {
@@ -45,11 +49,10 @@ class BlockchainService {
         }
     }
 
-    async inspectRequest( approved) {
+    async approveRequest(requestId) {
         try {
-            const tx = await this.contract.inspectRequest(
-                
-                approved
+            const tx = await this.contract.approveRequest(
+                requestId
             );
             const receipt = await tx.wait();
             return {
@@ -59,6 +62,21 @@ class BlockchainService {
             };
         } catch (error) {
             console.error('Error inspecting request:', error);
+            throw error;
+        }
+    }
+
+    async markInProgress(requestId) {
+        try {
+            const tx = await this.contract.markInProgress(requestId);
+            const receipt = await tx.wait();
+            return {
+                success: true,
+                transactionHash: receipt.hash,
+                blockHash: receipt.blockHash
+            };
+        } catch (error) {
+            console.error('Error marking request as in progress:', error);
             throw error;
         }
     }

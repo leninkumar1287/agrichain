@@ -15,6 +15,10 @@ const { v4: uuidv4 } = require('uuid');
 const auth = require('../../middleware/auth');
 const { CertificationRequest, Media, User, Checkpoint } = require('../../models/index');
 const blockchainService = require('../../services/blockchain');
+require('dotenv').config();
+const { DhiwayCertificate } = require('../../models');
+const axios = require('axios')
+
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -48,9 +52,9 @@ const verifyToken = (req, res, next) => {
 // Function to convert UUID to integer
 const uuidToInt = (uuid) => {
   // Remove hyphens and take first 8 characters
-  const hex = uuid.replace(/-/g, '').substring(0, 8);
+  // const hex = uuid.replace(/-/g, '').substring(0, 8);
   // Convert to integer
-  return parseInt(hex, 16);
+  return uuid;
 };
 
 // Function to convert integer to UUID
@@ -66,6 +70,7 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
   try {
     console.log("Starting request creation process");
     const { productName, description, checkpoints } = req.body;
+    const requestId = Math.floor(100000 + Math.random() * 900000);
     const mediaFiles = req.files;
     const userId = req.user.id;
 
@@ -74,13 +79,12 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
     // Create certification request in database
     console.log("Creating request in database");
     const request = await CertificationRequest.create({
+      requestId,
       productName,
       description,
       farmerId: userId,
       status: 'pending'
     });
-    console.log("Database request created:", request.id);
-
     // Upload media files and create media records
     const mediaHashes = [];
     if (mediaFiles && mediaFiles.length > 0) {
@@ -90,7 +94,7 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
           type: file.mimetype.startsWith('image/') ? 'image' : 'video',
           url: `/uploads/${file.filename}`,
           hash: file.filename,
-          requestId: request.id
+          requestId: request.requestId
         });
         mediaHashes.push(media.hash);
       }
@@ -103,24 +107,23 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
       if (typeof checkpoints === 'string') {
         parsedCheckpoints = JSON.parse(checkpoints);
       }
-      console.log("Parsed checkpoints:", parsedCheckpoints);
       for (const cp of parsedCheckpoints) {
-        const checkpointid = cp.id || cp.checkpointId;
-        if (!checkpointid) {
+        const checkpointId = cp.id || cp.checkpointId;
+        if (!checkpointId) {
           console.log("Skipping checkpoint with missing id:", cp);
           continue;
         }
         console.log("Saving checkpoint:", {
-          requestid: request.id,
-          checkpointid,
+          requestId: request.requestId,
+          checkpointId,
           answer: cp.answer,
-          mediaurl: cp.mediaUrl || null
+          mediaUrl: cp.mediaUrl || null
         });
         await Checkpoint.create({
-          requestid: request.id,
-          checkpointid,
+          requestId: request.requestId,
+          checkpointId,
           answer: cp.answer,
-          mediaurl: cp.mediaUrl || null
+          mediaUrl: cp.mediaUrl || null
         });
       }
       console.log("Checkpoints saved:", parsedCheckpoints.length);
@@ -130,21 +133,17 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
     console.log("Creating request on blockchain");
     let blockchainResult;
     try {
-      const blockchainRequestIdInt = uuidToInt(request.id);
-      
       blockchainResult = await blockchainService.createCertificationRequest(
+        requestId,
         productName,
         description,
         mediaHashes,
-        blockchainRequestIdInt
       );
       console.log("Blockchain request created:", blockchainResult);
 
-      const blockchainRequestId = intToUuid(blockchainResult.requestId);
-
       // Update request with blockchain data
       await request.update({
-        blockchainRequestId,
+        blockchainRequestId: requestId,
         blockchainTransactions: {
           farmer: {
             initiated: blockchainResult.transactionHash,
@@ -161,8 +160,7 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
         }
       });
       console.log("Request updated with blockchain data:", {
-        requestId: request.id,
-        blockchainRequestId,
+        requestId: requestId,
         transactionHash: blockchainResult.transactionHash
       });
     } catch (blockchainError) {
@@ -181,7 +179,7 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
       stack: error.stack,
       name: error.name
     });
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Error creating certification request',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -209,7 +207,7 @@ router.get('/requests', auth(['farmer']), async (req, res) => {
 router.get('/inspection/requests', auth(['inspector']), async (req, res) => {
   try {
     const requests = await CertificationRequest.findAll({
-      where: { status: 'pending' },
+      // where: { status: 'pending' },
       include: [
         { model: Media },
         { model: User, as: 'farmer' }
@@ -225,6 +223,7 @@ router.get('/inspection/requests', auth(['inspector']), async (req, res) => {
 // Inspect request
 router.post('/inspect/:requestId', auth(['inspector']), async (req, res) => {
   try {
+    console.log("Function called ")
     const { approved } = req.body;
     const token = req.headers.authorization?.split(' ')[1];
     const request = await CertificationRequest.findByPk(req.params.requestId);
@@ -245,11 +244,10 @@ router.post('/inspect/:requestId', auth(['inspector']), async (req, res) => {
     const blockchainRequestIdInt = uuidToInt(request.blockchainRequestId);
 
     // Update blockchain
-    const blockchainResult = await blockchainService.inspectRequest(
-      blockchainRequestIdInt,
-      approved
+    const blockchainResult = await blockchainService.approveRequest(
+      blockchainRequestIdInt
     );
-
+    console.log("blockchainResult :", blockchainResult)
     // Determine the new status and transaction type
     const newStatus = approved ? 'approved' : 'rejected';
     const transactionType = approved ? 'approved' : 'rejected';
@@ -262,13 +260,14 @@ router.post('/inspect/:requestId', auth(['inspector']), async (req, res) => {
       blockchainTransactions: {
         ...currentTransactions,
         inspector: {
-          ...currentTransactions.inspector,
-          [transactionType]: blockchainResult.transactionHash
+          in_progress: transactionType === 'approved' ? blockchainResult.transactionHash : null,
+          approved: transactionType === 'approved' ? blockchainResult.transactionHash : null,
+          rejected: transactionType === 'rejected' ? blockchainResult.transactionHash : null
         }
       }
     });
 
-    res.json({ 
+    res.json({
       message: `Request ${newStatus} successfully`,
       blockchainResult,
       token
@@ -280,6 +279,57 @@ router.post('/inspect/:requestId', auth(['inspector']), async (req, res) => {
 });
 
 // Mark request as in progress
+// router.post('/inspect/:requestId/status', auth(['inspector']), async (req, res) => {
+//   try {
+//     const token = req.headers.authorization?.split(' ')[1];
+//     const request = await CertificationRequest.findByPk(req.params.requestId);
+
+//     if (!request) {
+//       return res.status(404).json({ message: 'Request not found' });
+//     }
+
+//     if (request.status !== 'pending') {
+//       return res.status(400).json({ message: 'Request cannot be marked as in progress' });
+//     }
+
+//     if (!request.blockchainRequestId) {
+//       return res.status(400).json({ message: 'Request not found on blockchain' });
+//     }
+
+//     // Convert blockchainRequestId to integer for smart contract
+//     const blockchainRequestIdInt = uuidToInt(request.blockchainRequestId);
+
+//     // Update blockchain
+//     const blockchainResult = await blockchainService.inspectRequest(
+//       blockchainRequestIdInt,
+//       false // in_progress is treated as not approved yet
+//     );
+
+//     // Update database
+//     const currentTransactions = request.blockchainTransactions || {};
+//     await request.update({
+//       status: 'in_progress',
+//       inspectorId: req.user.id,
+//       blockchainTransactions: {
+//         ...currentTransactions,
+//         inspector: {
+//           ...currentTransactions.inspector,
+//           in_progress: blockchainResult.transactionHash
+//         }
+//       }
+//     });
+
+//     res.json({ 
+//       message: 'Request marked as in progress successfully',
+//       blockchainResult,
+//       token
+//     });
+//   } catch (error) {
+//     console.error('Error updating request status:', error);
+//     res.status(500).json({ message: 'Error updating request status', error: error.message });
+//   }
+// });
+
 router.post('/inspect/:requestId/status', auth(['inspector']), async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -301,11 +351,8 @@ router.post('/inspect/:requestId/status', auth(['inspector']), async (req, res) 
     const blockchainRequestIdInt = uuidToInt(request.blockchainRequestId);
 
     // Update blockchain
-    const blockchainResult = await blockchainService.inspectRequest(
-      blockchainRequestIdInt,
-      false // in_progress is treated as not approved yet
-    );
-
+    const blockchainResult = await blockchainService.markInProgress(blockchainRequestIdInt);
+    console.log(" blockchainResult : ", blockchainResult)
     // Update database
     const currentTransactions = request.blockchainTransactions || {};
     await request.update({
@@ -320,7 +367,7 @@ router.post('/inspect/:requestId/status', auth(['inspector']), async (req, res) 
       }
     });
 
-    res.json({ 
+    res.json({
       message: 'Request marked as in progress successfully',
       blockchainResult,
       token
@@ -331,11 +378,34 @@ router.post('/inspect/:requestId/status', auth(['inspector']), async (req, res) 
   }
 });
 
-// Issue certificate
+// Issue certificate'
+
+router.get('/issuer/requests', auth(['certificate_issuer']), async (req, res) => {
+  try {
+    const requests = await CertificationRequest.findAll({
+
+      include: [
+        { model: Media },
+        { model: User, as: 'farmer' }
+      ]
+    });
+    res.json(requests);
+  } catch (error) {
+    console.error('Error fetching inspection requests:', error);
+    res.status(500).json({ message: 'Error fetching inspection requests' });
+  }
+});
+
+
 router.post('/certify/:requestId', auth(['certificate_issuer']), async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    const request = await CertificationRequest.findByPk(req.params.requestId);
+    const request = await CertificationRequest.findByPk(req.params.requestId, {
+      include: [
+        { model: User, as: 'farmer' },
+        { model: User, as: 'inspector' }
+      ]
+    });
 
     if (!request) {
       return res.status(404).json({ message: 'Request not found' });
@@ -345,12 +415,49 @@ router.post('/certify/:requestId', auth(['certificate_issuer']), async (req, res
       return res.status(400).json({ message: 'Request not approved' });
     }
 
-    // Update blockchain
+    // 1. Prepare Cord API payload
+    const cordPayload = {
+      schemaId: process.env.CORD_SCHEMA_ID,
+      active: true,
+      publish: true,
+      send_email: true,
+      issuer_message: "Certificate issued via platform",
+      need_cc: false,
+      need_admin_cc: false,
+      name: request.farmer?.username,
+      farmer_id: request.farmerId,
+      id: request.requestId,
+      approver: request.inspectorId,
+      issuer: req.user.id
+    };
+
+    // 2. Call Cord API
+    const cordResponse = await axios.post(
+      `https://api.studio.dhiway.com/api/v1/${process.env.CORD_ORG_ID}/${process.env.CORD_SPACE_ID}/records`,
+      cordPayload,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.CORD_API_TOKEN}`,
+          "X-UserId": process.env.CORD_USER_ID,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    // 3. Save Cord response in DhiwayCertificates table
+    const certData = cordResponse.data;
+    await DhiwayCertificate.create({
+      requestId: req.params.requestId,
+      dhiwayResponse: certData
+    });
+
+
+    // 4. Proceed with blockchain call as before
     const blockchainResult = await blockchainService.issueCertificate(
       parseInt(request.blockchainRequestId)
     );
 
-    // Update database
+    // 5. Update database
     const currentTransactions = request.blockchainTransactions || {};
     await request.update({
       status: 'certified',
@@ -364,9 +471,10 @@ router.post('/certify/:requestId', auth(['certificate_issuer']), async (req, res
       }
     });
 
-    res.json({ 
+    res.json({
       message: 'Certificate issued successfully',
       blockchainResult,
+      cordCertificate: certData,
       token
     });
   } catch (error) {
@@ -375,9 +483,20 @@ router.post('/certify/:requestId', auth(['certificate_issuer']), async (req, res
   }
 });
 
+router.get('/dhiway-certificate/:requestId', auth(), async (req, res) => {
+  try {
+    const cert = await DhiwayCertificate.findOne({ where: { requestId: req.params.requestId } });
+    if (!cert) return res.status(404).json({ message: 'Certificate not found' });
+    res.json(cert);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching certificate', error: error.message });
+  }
+});
+
 // Revert request
 router.post('/revert/:requestId', auth(['farmer']), async (req, res) => {
   try {
+    console.log("req.params.requestId :", req.params.requestId)
     const token = req.headers.authorization?.split(' ')[1];
     const request = await CertificationRequest.findByPk(req.params.requestId);
 
@@ -394,6 +513,7 @@ router.post('/revert/:requestId', auth(['farmer']), async (req, res) => {
     }
 
     // Update blockchain
+    console.log("parseInt(request.blockchainRequestId) :", request.blockchainRequestId)
     const blockchainResult = await blockchainService.revertRequest(
       parseInt(request.blockchainRequestId)
     );
@@ -411,7 +531,7 @@ router.post('/revert/:requestId', auth(['farmer']), async (req, res) => {
       }
     });
 
-    res.json({ 
+    res.json({
       message: 'Request reverted successfully',
       blockchainResult,
       token
@@ -440,12 +560,12 @@ router.get('/requests/:requestId', auth(), async (req, res) => {
 
     // Get checkpoints separately
     const checkpoints = await Checkpoint.findAll({
-      where: { requestid: request.id }
+      where: { requestId: request.requestId }
     });
 
     // Format the response
     const formattedRequest = {
-      id: request.id,
+      id: request.requestId,
       productName: request.productName,
       description: request.description,
       status: request.status,
@@ -476,9 +596,9 @@ router.get('/requests/:requestId', auth(), async (req, res) => {
       } : null,
       checkpoints: checkpoints.map(checkpoint => ({
         id: checkpoint.id,
-        checkpointId: checkpoint.checkpointid,
+        checkpointId: checkpoint.checkpointId,
         answer: checkpoint.answer,
-        mediaUrl: checkpoint.mediaurl,
+        mediaUrl: checkpoint.mediaUrl,
         createdAt: checkpoint.createdAt
       })) || [],
       media: request.Media?.map(media => ({

@@ -57,7 +57,7 @@ class BlockchainService {
             const receipt = await tx.wait();
             return {
                 success: true,
-                transactionHash: receipt.transactionHash,
+                transactionHash: receipt.hash,
                 blockHash: receipt.blockHash
             };
         } catch (error) {
@@ -87,7 +87,7 @@ class BlockchainService {
             const receipt = await tx.wait();
             return {
                 success: true,
-                transactionHash: receipt.transactionHash,
+                transactionHash: receipt.hash,
                 blockHash: receipt.blockHash
             };
         } catch (error) {
@@ -123,7 +123,7 @@ class BlockchainService {
             const receipt = await tx.wait();
             return {
                 success: true,
-                transactionHash: receipt.transactionHash,
+                transactionHash: receipt.hash,
                 blockHash: receipt.blockHash
             };
         } catch (error) {

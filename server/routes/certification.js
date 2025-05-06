@@ -483,7 +483,7 @@ router.post('/certify/:requestId', auth(['certificate_issuer']), async (req, res
   }
 });
 
-router.get('/dhiway-certificate/:requestId', auth(), async (req, res) => {
+router.get('/dhiway-certificate/:requestId', auth(['farmer','certificate_issuer']), async (req, res) => {
   try {
     const cert = await DhiwayCertificate.findOne({ where: { requestId: req.params.requestId } });
     if (!cert) return res.status(404).json({ message: 'Certificate not found' });
@@ -543,7 +543,7 @@ router.post('/revert/:requestId', auth(['farmer']), async (req, res) => {
 });
 
 // Get detailed request information
-router.get('/requests/:requestId', auth(), async (req, res) => {
+router.get('/requests/:requestId', auth(['farmer','inspector','certificate_issuer']), async (req, res) => {
   try {
     const request = await CertificationRequest.findByPk(req.params.requestId, {
       include: [

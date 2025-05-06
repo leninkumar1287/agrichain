@@ -30,7 +30,7 @@ async function main() {
   try {
     console.log('Deploying contract...');
     await runCommand('node scripts/deploy.js', 'DEPLOY');
-
+    
     console.log('Starting server...');
     await runCommand('node server.js', 'SERVER');
   } catch (error) {

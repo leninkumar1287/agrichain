@@ -40,6 +40,9 @@ const certificationRoutes = require('./routes/certification');
 app.use('/api/auth', authRoutes);
 app.use('/api/certification', certificationRoutes);
 
+app.use('/uploads/checkpoint-media', express.static('uploads/checkpoint-media'));
+app.use('/uploads/common-media', express.static('uploads/common-media'));
+
 // Log uncaught exceptions
 process.on('uncaughtException', (error) => {
   process.exit(1);

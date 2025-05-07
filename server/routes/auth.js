@@ -9,10 +9,10 @@ const { verifyToken } = require('../middleware/authMiddleware.js');
 router.post('/register', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { username, email, password, role } = req.body;
+    const { username, email, password, role, mobile } = req.body;
 
     // Validate input
-    if (!username || !email || !password || !role) {
+    if (!username || !email || !password || !role || !mobile) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
@@ -27,15 +27,19 @@ router.post('/register', async (req, res) => {
 
     // Check if user already exists
     const userExists = await client.query(
-      'SELECT * FROM "Users" WHERE username = $1 OR email = $2',
-      [username, email]
+      'SELECT * FROM "Users" WHERE username = $1 OR email = $2 OR mobile = $3',
+      [username, email, mobile]
     );
 
     if (userExists.rows.length > 0) {
       await client.query('ROLLBACK');
       return res.status(400).json({ 
         message: 'User already exists',
-        details: userExists.rows[0].username === username ? 'Username already taken' : 'Email already registered'
+        details: userExists.rows[0].username === username
+          ? 'Username already taken'
+          : userExists.rows[0].email === email
+          ? 'Email already registered'
+          : 'Mobile number already registered'
       });
     }
 
@@ -45,8 +49,8 @@ router.post('/register', async (req, res) => {
 
     // Insert new user
     const newUser = await client.query(
-      'INSERT INTO "Users" (username, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, username, role',
-      [username, email, hashedPassword, role]
+      'INSERT INTO "Users" (username, email, password, role, mobile) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, role',
+      [username, email, hashedPassword, role, mobile]
     );
 
     // Commit transaction
@@ -86,25 +90,28 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { email, password } = req.body;
+    // Accept credentials from req.body.email
+    const credentials = req.body.email;
 
     // Validate input
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required' });
+    if (!credentials || !credentials.identifier || !credentials.password) {
+      return res.status(400).json({ message: 'Email or mobile number and password are required' });
     }
 
-    // Check if user exists
-    const user = await client.query(
-      'SELECT * FROM "Users" WHERE email = $1',
-      [email]
-    );
+    // Check if identifier is an email or mobile number
+    const isEmail = credentials.identifier.includes('@');
+    const userQuery = isEmail
+      ? 'SELECT * FROM "Users" WHERE email = $1'
+      : 'SELECT * FROM "Users" WHERE mobile = $1';
+
+    const user = await client.query(userQuery, [credentials.identifier]);
 
     if (user.rows.length === 0) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
     // Verify password
-    const validPassword = await bcrypt.compare(password, user.rows[0].password);
+    const validPassword = await bcrypt.compare(credentials.password, user.rows[0].password);
     if (!validPassword) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }

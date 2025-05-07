@@ -62,7 +62,6 @@ async function resetDatabase() {
     await dbClient.query('BEGIN');
 
     try {
-      console.log("sql :",sql)
       await dbClient.query(sql);
       await dbClient.query('COMMIT');
       console.log('✅ Database schema created successfully');

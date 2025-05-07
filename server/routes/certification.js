@@ -18,6 +18,7 @@ const blockchainService = require('../../services/blockchain');
 require('dotenv').config();
 const { DhiwayCertificate } = require('../../models');
 const axios = require('axios')
+const { uploadCheckpoint, uploadCommon } = require('../../middleware/fileUploader');
 
 
 // Configure multer for file uploads
@@ -68,16 +69,11 @@ const intToUuid = (num) => {
 // Create certification request (Farmer)
 router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req, res) => {
   try {
-    console.log("Starting request creation process");
     const { productName, description, checkpoints } = req.body;
     const requestId = Math.floor(100000 + Math.random() * 900000);
     const mediaFiles = req.files;
     const userId = req.user.id;
-
-    console.log("Request data:", { productName, description, userId, filesCount: mediaFiles?.length });
-
     // Create certification request in database
-    console.log("Creating request in database");
     const request = await CertificationRequest.create({
       requestId,
       productName,
@@ -88,7 +84,6 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
     // Upload media files and create media records
     const mediaHashes = [];
     if (mediaFiles && mediaFiles.length > 0) {
-      console.log("Processing media files");
       for (const file of mediaFiles) {
         const media = await Media.create({
           type: file.mimetype.startsWith('image/') ? 'image' : 'video',
@@ -98,7 +93,6 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
         });
         mediaHashes.push(media.hash);
       }
-      console.log("Media files processed:", mediaHashes.length);
     }
 
     // Save checkpoints if provided
@@ -110,15 +104,8 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
       for (const cp of parsedCheckpoints) {
         const checkpointId = cp.id || cp.checkpointId;
         if (!checkpointId) {
-          console.log("Skipping checkpoint with missing id:", cp);
           continue;
         }
-        console.log("Saving checkpoint:", {
-          requestId: request.requestId,
-          checkpointId,
-          answer: cp.answer,
-          mediaUrl: cp.mediaUrl || null
-        });
         await Checkpoint.create({
           requestId: request.requestId,
           checkpointId,
@@ -126,11 +113,9 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
           mediaUrl: cp.mediaUrl || null
         });
       }
-      console.log("Checkpoints saved:", parsedCheckpoints.length);
     }
 
     // Create request on blockchain
-    console.log("Creating request on blockchain");
     let blockchainResult;
     try {
       blockchainResult = await blockchainService.createCertificationRequest(
@@ -139,8 +124,6 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
         description,
         mediaHashes,
       );
-      console.log("Blockchain request created:", blockchainResult);
-
       // Update request with blockchain data
       await request.update({
         blockchainRequestId: requestId,
@@ -159,12 +142,8 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
           }
         }
       });
-      console.log("Request updated with blockchain data:", {
-        requestId: requestId,
-        transactionHash: blockchainResult.transactionHash
-      });
+
     } catch (blockchainError) {
-      console.error("Blockchain error:", blockchainError);
       await request.destroy();
       throw new Error(`Blockchain error: ${blockchainError.message}`);
     }
@@ -179,7 +158,7 @@ router.post('/requests', auth(['farmer']), upload.array('media', 10), async (req
       stack: error.stack,
       name: error.name
     });
-    res.status(500).json({
+    res.status(500).json({ 
       message: 'Error creating certification request',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -223,7 +202,6 @@ router.get('/inspection/requests', auth(['inspector']), async (req, res) => {
 // Inspect request
 router.post('/inspect/:requestId', auth(['inspector']), async (req, res) => {
   try {
-    console.log("Function called ")
     const { approved } = req.body;
     const token = req.headers.authorization?.split(' ')[1];
     const request = await CertificationRequest.findByPk(req.params.requestId);
@@ -247,7 +225,6 @@ router.post('/inspect/:requestId', auth(['inspector']), async (req, res) => {
     const blockchainResult = await blockchainService.approveRequest(
       blockchainRequestIdInt
     );
-    console.log("blockchainResult :", blockchainResult)
     // Determine the new status and transaction type
     const newStatus = approved ? 'approved' : 'rejected';
     const transactionType = approved ? 'approved' : 'rejected';
@@ -352,7 +329,6 @@ router.post('/inspect/:requestId/status', auth(['inspector']), async (req, res) 
 
     // Update blockchain
     const blockchainResult = await blockchainService.markInProgress(blockchainRequestIdInt);
-    console.log(" blockchainResult : ", blockchainResult)
     // Update database
     const currentTransactions = request.blockchainTransactions || {};
     await request.update({
@@ -496,7 +472,6 @@ router.get('/dhiway-certificate/:requestId', auth(['farmer','certificate_issuer'
 // Revert request
 router.post('/revert/:requestId', auth(['farmer']), async (req, res) => {
   try {
-    console.log("req.params.requestId :", req.params.requestId)
     const token = req.headers.authorization?.split(' ')[1];
     const request = await CertificationRequest.findByPk(req.params.requestId);
 
@@ -513,7 +488,6 @@ router.post('/revert/:requestId', auth(['farmer']), async (req, res) => {
     }
 
     // Update blockchain
-    console.log("parseInt(request.blockchainRequestId) :", request.blockchainRequestId)
     const blockchainResult = await blockchainService.revertRequest(
       parseInt(request.blockchainRequestId)
     );
@@ -614,6 +588,72 @@ router.get('/requests/:requestId', auth(['farmer','inspector','certificate_issue
   } catch (error) {
     console.error('Error fetching request details:', error);
     res.status(500).json({ message: 'Error fetching request details', error: error.message });
+  }
+});
+
+// Checkpoint media upload
+router.post('/upload/checkpoint', uploadCheckpoint.single('file'), async (req, res) => {
+  try {
+    const { checkpointId } = req.body;
+    if (!checkpointId) return res.status(400).json({ message: 'checkpointId is required' });
+
+    // Update Checkpoint table
+    await Checkpoint.update(
+      { mediaUrl: `/uploads/checkpoint-media/${req.file.filename}` },
+      { where: { id: checkpointId } }
+    );
+
+    res.status(201).json({ url: `/uploads/checkpoint-media/${req.file.filename}` });
+  } catch (error) {
+    res.status(500).json({ message: 'Error uploading checkpoint media', error: error.message });
+  }
+});
+
+// Common media upload
+router.post('/upload/common', uploadCommon.single('file'), async (req, res) => {
+  try {
+    const { requestId } = req.body;
+    if (!requestId) return res.status(400).json({ message: 'requestId is required' });
+
+    // Save to Media table
+    const media = await Media.create({
+      type: req.file.mimetype.startsWith('image/') ? 'image' : 'video',
+      url: `/uploads/common-media/${req.file.filename}`,
+      hash: req.file.filename,
+      requestId
+    });
+
+    res.status(201).json({ url: media.url, mediaId: media.id });
+  } catch (error) {
+    res.status(500).json({ message: 'Error uploading common media', error: error.message });
+  }
+});
+
+router.post('/delete-media', async (req, res) => {
+  try {
+    const { mediaUrl, checkpointId } = req.body;
+    if (!mediaUrl) return res.status(400).json({ message: 'mediaUrl is required' });
+
+    // Remove leading slash if present
+    const relativePath = mediaUrl.startsWith('/') ? mediaUrl.slice(1) : mediaUrl;
+    // __dirname is e.g. /Users/you/project/server/routes
+    // Go up to project root, then to uploads/checkpoint-media/...
+    const filePath = path.join(__dirname, '..', '..', relativePath);
+
+    // Debug: log the file path
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      // Optionally update DB here
+      if (checkpointId) {
+        await Checkpoint.update({ mediaUrl: null }, { where: { id: checkpointId } });
+      }
+      res.json({ message: 'Media deleted' });
+    } else {
+      res.status(404).json({ message: 'File not found on server', filePath });
+    }
+  } catch (error) {
+    console.error('Delete error:', error);
+    res.status(500).json({ message: 'Error deleting media', error: error.message });
   }
 });
 

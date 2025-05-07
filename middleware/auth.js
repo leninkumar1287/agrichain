@@ -4,7 +4,6 @@ const { User } = require('../models');
 const auth = (allowedRoles = []) => {
     return async (req, res, next) => {
         try {
-            console.log('Auth middleware called');
             // Get token from header
             const token = req.header('Authorization')?.replace('Bearer ', '');
             

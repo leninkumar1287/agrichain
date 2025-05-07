@@ -15,10 +15,6 @@ class BlockchainService {
 
     async createCertificationRequest(requestId, productName, description, mediaHashes) {
         try {
-            console.log(requestId,
-                productName,
-                description,
-                mediaHashes)
             const tx = await this.contract.createRequest(
                 requestId,
                 productName,

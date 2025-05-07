@@ -29,6 +29,11 @@ const User = sequelize.define('User', {
     type: Sequelize.STRING,
     allowNull: false
   },
+  mobile: {
+    type: Sequelize.STRING,
+    allowNull: false,
+    unique: true
+  },
   role: {
     type: Sequelize.ENUM('farmer', 'inspector', 'certificate_issuer'),
     allowNull: false

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS "Users" (
     username VARCHAR(255) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
+    mobile VARCHAR(20) UNIQUE NOT NULL,
     role VARCHAR(50) NOT NULL CHECK (role IN ('farmer', 'inspector', 'certificate_issuer')),
     "walletAddress" VARCHAR(255),
     "isActive" BOOLEAN DEFAULT true,
